@@ -6,6 +6,11 @@
  *   node scrape-chapter-to-pdf.js \
  *     --series-url "https://weebcentral.com/series/.../Jigokuraku-kaku-Yuuji" \
  *     --output "jigokuraku-ch1.pdf"
+ *
+ * Optional Cloudflare/session helpers:
+ *   --cookies-file ./cookies.json     # Puppeteer JSON cookie array
+ *   --cookie-header "a=b; c=d"       # Raw Cookie header format
+ *   --user-agent "..."               # Override default browser UA
  */
 
 const fs = require('fs');
@@ -26,6 +31,12 @@ function arg(name, fallback = null) {
 const SERIES_URL = arg('--series-url');
 const OUTPUT_PDF = arg('--output', 'chapter-1.pdf');
 const TIMEOUT = Number(arg('--timeout-ms', '120000'));
+const COOKIES_FILE = arg('--cookies-file');
+const COOKIE_HEADER = arg('--cookie-header');
+const USER_AGENT = arg(
+  '--user-agent',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+);
 
 if (!SERIES_URL) {
   console.error('Missing --series-url');
@@ -153,6 +164,49 @@ async function collectChapterOneImageUrls(page) {
   return { firstChapterUrl, imageUrls };
 }
 
+function parseCookieHeader(headerValue, domain) {
+  return headerValue
+    .split(';')
+    .map((pair) => pair.trim())
+    .filter(Boolean)
+    .map((pair) => {
+      const [name, ...rest] = pair.split('=');
+      return {
+        name: (name || '').trim(),
+        value: rest.join('=').trim(),
+        domain,
+        path: '/',
+      };
+    })
+    .filter((c) => c.name && c.value);
+}
+
+async function applySessionCookies(page) {
+  const siteOrigin = new URL(SERIES_URL).origin;
+  await page.goto(siteOrigin, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
+
+  if (COOKIES_FILE) {
+    const raw = fs.readFileSync(COOKIES_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || !parsed.length) {
+      throw new Error('--cookies-file must contain a non-empty JSON cookie array.');
+    }
+    await page.setCookie(...parsed);
+    console.log(`Applied ${parsed.length} cookies from ${COOKIES_FILE}`);
+    return;
+  }
+
+  if (COOKIE_HEADER) {
+    const host = new URL(SERIES_URL).hostname;
+    const cookies = parseCookieHeader(COOKIE_HEADER, host);
+    if (!cookies.length) {
+      throw new Error('No valid cookies found in --cookie-header.');
+    }
+    await page.setCookie(...cookies);
+    console.log(`Applied ${cookies.length} cookies from --cookie-header`);
+  }
+}
+
 async function imagesToPdf(urls, outPath) {
   const doc = new PDFDocument({ autoFirstPage: false, margin: 0 });
   const output = fs.createWriteStream(outPath);
@@ -187,6 +241,11 @@ async function imagesToPdf(urls, outPath) {
   try {
     const page = await browser.newPage();
     page.setDefaultNavigationTimeout(TIMEOUT);
+    await page.setUserAgent(USER_AGENT);
+
+    if (COOKIES_FILE || COOKIE_HEADER) {
+      await applySessionCookies(page);
+    }
 
     const { firstChapterUrl, imageUrls } = await collectChapterOneImageUrls(page);
     console.log(`Found chapter: ${firstChapterUrl}`);
