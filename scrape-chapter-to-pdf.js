@@ -176,7 +176,14 @@ async function imagesToPdf(urls, outPath) {
 }
 
 (async () => {
-  const browser = await puppeteer.launch({ headless: 'new' });
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    ignoreHTTPSErrors: true,
+    args: [
+      ...(process.getuid && process.getuid() === 0 ? ['--no-sandbox', '--disable-setuid-sandbox'] : []),
+      '--ignore-certificate-errors',
+    ],
+  });
   try {
     const page = await browser.newPage();
     page.setDefaultNavigationTimeout(TIMEOUT);
