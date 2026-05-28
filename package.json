@@ -1,0 +1,13 @@
+{
+  "name": "weebcentral-chapter-export",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "export": "node scrape-chapter-to-pdf.js"
+  },
+  "dependencies": {
+    "pdfkit": "^0.15.0",
+    "puppeteer": "^24.9.0"
+  }
+}
